@@ -1,238 +1,222 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'dart:convert';
 
 void main() {
-  runApp(const TodoApp());
+  runApp(const HabitTrackerApp());
 }
 
-class TodoApp extends StatelessWidget {
-  const TodoApp({Key? key}) : super(key: key);
+class HabitTrackerApp extends StatelessWidget {
+  const HabitTrackerApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Beautiful Todo',
+      title: 'Habit Tracker',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.deepPurple,
+        primarySwatch: Colors.purple,
         brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFF5F7FA),
         fontFamily: 'Poppins',
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        primarySwatch: Colors.deepPurple,
+        primarySwatch: Colors.purple,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF1A1A2E),
         useMaterial3: true,
       ),
-      home: const TodoHomePage(),
+      home: const HabitHomePage(),
     );
   }
 }
 
-class Todo {
+class Habit {
   String id;
-  String title;
+  String name;
   String description;
-  bool isCompleted;
+  String icon;
+  Color color;
+  int targetDays; // How many days per week
+  List<String> completedDates; // List of dates in format 'yyyy-MM-dd'
   DateTime createdAt;
-  DateTime? dueDate;
-  int priority; // 0: Low, 1: Medium, 2: High
 
-  Todo({
+  Habit({
     required this.id,
-    required this.title,
+    required this.name,
     this.description = '',
-    this.isCompleted = false,
+    this.icon = '✓',
+    required this.color,
+    this.targetDays = 7,
+    List<String>? completedDates,
     required this.createdAt,
-    this.dueDate,
-    this.priority = 1,
-  });
+  }) : completedDates = completedDates ?? [];
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'title': title,
+    'name': name,
     'description': description,
-    'isCompleted': isCompleted,
+    'icon': icon,
+    'color': color.value,
+    'targetDays': targetDays,
+    'completedDates': completedDates,
     'createdAt': createdAt.toIso8601String(),
-    'dueDate': dueDate?.toIso8601String(),
-    'priority': priority,
   };
 
-  factory Todo.fromJson(Map<String, dynamic> json) => Todo(
+  factory Habit.fromJson(Map<String, dynamic> json) => Habit(
     id: json['id'],
-    title: json['title'],
+    name: json['name'],
     description: json['description'] ?? '',
-    isCompleted: json['isCompleted'] ?? false,
+    icon: json['icon'] ?? '✓',
+    color: Color(json['color']),
+    targetDays: json['targetDays'] ?? 7,
+    completedDates: List<String>.from(json['completedDates'] ?? []),
     createdAt: DateTime.parse(json['createdAt']),
-    dueDate: json['dueDate'] != null ? DateTime.parse(json['dueDate']) : null,
-    priority: json['priority'] ?? 1,
   );
+
+  bool isCompletedToday() {
+    final today = _getDateString(DateTime.now());
+    return completedDates.contains(today);
+  }
+
+  int getCurrentStreak() {
+    if (completedDates.isEmpty) return 0;
+
+    int streak = 0;
+    DateTime checkDate = DateTime.now();
+
+    while (true) {
+      String dateStr = _getDateString(checkDate);
+      if (completedDates.contains(dateStr)) {
+        streak++;
+        checkDate = checkDate.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+
+    return streak;
+  }
+
+  int getWeeklyCompletion() {
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    int count = 0;
+
+    for (int i = 0; i < 7; i++) {
+      final date = weekStart.add(Duration(days: i));
+      if (completedDates.contains(_getDateString(date))) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  static String _getDateString(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
 }
 
-class TodoHomePage extends StatefulWidget {
-  const TodoHomePage({Key? key}) : super(key: key);
+class HabitHomePage extends StatefulWidget {
+  const HabitHomePage({Key? key}) : super(key: key);
 
   @override
-  State<TodoHomePage> createState() => _TodoHomePageState();
+  State<HabitHomePage> createState() => _HabitHomePageState();
 }
 
-class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMixin {
-  List<Todo> todos = [];
-  List<Todo> filteredTodos = [];
+class _HabitHomePageState extends State<HabitHomePage> {
+  List<Habit> habits = [];
   String searchQuery = '';
-  int selectedFilter = 0; // 0: All, 1: Active, 2: Completed
-  bool isCalendarView = false; // Toggle between list and calendar view
-  DateTime _focusedDay = DateTime.now();
-  DateTime? _selectedDay;
-  late AnimationController _fabAnimationController;
 
   @override
   void initState() {
     super.initState();
-    _selectedDay = _focusedDay;
-    _fabAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    loadTodos();
+    loadHabits();
   }
 
-  @override
-  void dispose() {
-    _fabAnimationController.dispose();
-    super.dispose();
-  }
-
-  Future<void> loadTodos() async {
+  Future<void> loadHabits() async {
     final prefs = await SharedPreferences.getInstance();
-    final String? todosJson = prefs.getString('todos');
-    if (todosJson != null) {
-      final List<dynamic> decoded = json.decode(todosJson);
+    final String? habitsJson = prefs.getString('habits');
+    if (habitsJson != null) {
+      final List<dynamic> decoded = json.decode(habitsJson);
       setState(() {
-        todos = decoded.map((item) => Todo.fromJson(item)).toList();
-        _applyFilters();
+        habits = decoded.map((item) => Habit.fromJson(item)).toList();
       });
     }
-    // Animate the FAB button
-    _fabAnimationController.forward();
   }
 
-  Future<void> saveTodos() async {
+  Future<void> saveHabits() async {
     final prefs = await SharedPreferences.getInstance();
-    final String encoded = json.encode(todos.map((todo) => todo.toJson()).toList());
-    await prefs.setString('todos', encoded);
+    final String encoded = json.encode(habits.map((habit) => habit.toJson()).toList());
+    await prefs.setString('habits', encoded);
   }
 
-  void _applyFilters() {
-    setState(() {
-      filteredTodos = todos.where((todo) {
-        // Apply search filter
-        bool matchesSearch = searchQuery.isEmpty ||
-            todo.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
-            todo.description.toLowerCase().contains(searchQuery.toLowerCase());
-
-        // Apply completion filter
-        bool matchesFilter = selectedFilter == 0 ||
-            (selectedFilter == 1 && !todo.isCompleted) ||
-            (selectedFilter == 2 && todo.isCompleted);
-
-        return matchesSearch && matchesFilter;
-      }).toList();
-
-      // Sort by priority and date
-      filteredTodos.sort((a, b) {
-        if (a.isCompleted != b.isCompleted) {
-          return a.isCompleted ? 1 : -1;
-        }
-        if (a.priority != b.priority) {
-          return b.priority.compareTo(a.priority);
-        }
-        return b.createdAt.compareTo(a.createdAt);
-      });
-    });
-  }
-
-  void _addOrEditTodo({Todo? existingTodo}) {
+  void _addOrEditHabit({Habit? existingHabit}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => TodoFormSheet(
-        existingTodo: existingTodo,
-        onSave: (todo) {
+      builder: (context) => HabitFormSheet(
+        existingHabit: existingHabit,
+        onSave: (habit) {
           setState(() {
-            if (existingTodo != null) {
-              final index = todos.indexWhere((t) => t.id == todo.id);
+            if (existingHabit != null) {
+              final index = habits.indexWhere((h) => h.id == habit.id);
               if (index != -1) {
-                todos[index] = todo;
+                habits[index] = habit;
               }
             } else {
-              todos.add(todo);
+              habits.add(habit);
             }
-            _applyFilters();
           });
-          saveTodos();
+          saveHabits();
         },
       ),
     );
   }
 
-  void _deleteTodo(String id) {
+  void _deleteHabit(String id) {
     setState(() {
-      todos.removeWhere((todo) => todo.id == id);
-      _applyFilters();
+      habits.removeWhere((habit) => habit.id == id);
     });
-    saveTodos();
+    saveHabits();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Todo deleted'),
-        action: SnackBarAction(
-          label: 'UNDO',
-          onPressed: () {
-            // Implement undo if needed
-          },
-        ),
+        content: const Text('Habit deleted'),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
-  void _toggleComplete(Todo todo) {
+  void _toggleHabitToday(Habit habit) {
     setState(() {
-      todo.isCompleted = !todo.isCompleted;
-      _applyFilters();
+      final today = _getDateString(DateTime.now());
+      if (habit.completedDates.contains(today)) {
+        habit.completedDates.remove(today);
+      } else {
+        habit.completedDates.add(today);
+      }
     });
-    saveTodos();
+    saveHabits();
   }
 
-  List<Todo> _getTasksForDay(DateTime day) {
-    return todos.where((todo) {
-      if (todo.dueDate == null) return false;
-      return isSameDay(todo.dueDate!, day);
-    }).toList();
-  }
-
-  bool isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
-
-  bool _isOverdue(Todo todo) {
-    if (todo.dueDate == null || todo.isCompleted) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dueDay = DateTime(todo.dueDate!.year, todo.dueDate!.month, todo.dueDate!.day);
-    return dueDay.isBefore(today);
+  String _getDateString(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final completedCount = todos.where((t) => t.isCompleted).length;
-    final activeCount = todos.length - completedCount;
+    final filteredHabits = habits.where((habit) {
+      return searchQuery.isEmpty ||
+          habit.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          habit.description.toLowerCase().contains(searchQuery.toLowerCase());
+    }).toList();
+
+    final completedToday = habits.where((h) => h.isCompletedToday()).length;
+    final totalStreak = habits.fold(0, (sum, habit) => sum + habit.getCurrentStreak());
 
     return Scaffold(
       body: CustomScrollView(
@@ -243,21 +227,9 @@ class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMix
             pinned: true,
             elevation: 0,
             backgroundColor: Theme.of(context).primaryColor,
-            actions: [
-              IconButton(
-                icon: Icon(isCalendarView ? Icons.list : Icons.calendar_today),
-                onPressed: () {
-                  setState(() {
-                    isCalendarView = !isCalendarView;
-                  });
-                },
-                tooltip: isCalendarView ? 'List View' : 'Calendar View',
-              ),
-              const SizedBox(width: 8),
-            ],
             flexibleSpace: FlexibleSpaceBar(
               title: const Text(
-                'My Tasks',
+                'Habit Tracker',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 24,
@@ -315,19 +287,19 @@ class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMix
                     children: [
                       Expanded(
                         child: _buildStatCard(
-                          'Active',
-                          activeCount.toString(),
-                          Icons.pending_actions,
-                          Colors.orange,
+                          'Today',
+                          '$completedToday/${habits.length}',
+                          Icons.today,
+                          Colors.blue,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: _buildStatCard(
-                          'Completed',
-                          completedCount.toString(),
-                          Icons.check_circle,
-                          Colors.green,
+                          'Total Streak',
+                          '$totalStreak days',
+                          Icons.local_fire_department,
+                          Colors.orange,
                         ),
                       ),
                     ],
@@ -336,11 +308,12 @@ class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMix
                   // Search Bar
                   TextField(
                     onChanged: (value) {
-                      searchQuery = value;
-                      _applyFilters();
+                      setState(() {
+                        searchQuery = value;
+                      });
                     },
                     decoration: InputDecoration(
-                      hintText: 'Search tasks...',
+                      hintText: 'Search habits...',
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: Theme.of(context).cardColor,
@@ -352,222 +325,61 @@ class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMix
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Filter Chips
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterChip('All', 0),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Active', 1),
-                        const SizedBox(width: 8),
-                        _buildFilterChip('Completed', 2),
-                      ],
+                ],
+              ),
+            ),
+          ),
+          // Habit List
+          filteredHabits.isEmpty
+              ? SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.self_improvement,
+                    size: 100,
+                    color: Colors.grey.withOpacity(0.3),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    searchQuery.isEmpty
+                        ? 'No habits yet!\nTap + to add one'
+                        : 'No habits found',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey.withOpacity(0.6),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          // Calendar or Todo List based on view mode
-          if (isCalendarView)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _buildCalendarView(),
-              ),
-            )
-          else ...[
-            // Todo List
-            filteredTodos.isEmpty
-                ? SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.task_alt,
-                      size: 100,
-                      color: Colors.grey.withOpacity(0.3),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      searchQuery.isEmpty
-                          ? 'No tasks yet!\nTap + to add one'
-                          : 'No tasks found',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey.withOpacity(0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-                : SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                    final todo = filteredTodos[index];
-                    return _buildTodoItem(todo, index);
-                  },
-                  childCount: filteredTodos.length,
-                ),
+          )
+              : SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                  final habit = filteredHabits[index];
+                  return _buildHabitCard(habit);
+                },
+                childCount: filteredHabits.length,
               ),
             ),
-          ],
+          ),
           const SliverToBoxAdapter(
             child: SizedBox(height: 100),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addOrEditTodo(),
+        onPressed: () => _addOrEditHabit(),
         icon: const Icon(Icons.add),
-        label: const Text('Add Task'),
+        label: const Text('Add Habit'),
         elevation: 8,
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-    );
-  }
-
-  Widget _buildCalendarView() {
-    return Column(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: TableCalendar(
-            firstDay: DateTime.utc(2020, 1, 1),
-            lastDay: DateTime.utc(2030, 12, 31),
-            focusedDay: _focusedDay,
-            selectedDayPredicate: (day) => _selectedDay != null && isSameDay(_selectedDay!, day),
-            calendarFormat: CalendarFormat.month,
-            startingDayOfWeek: StartingDayOfWeek.monday,
-            calendarStyle: CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.5),
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                shape: BoxShape.circle,
-              ),
-              markerDecoration: BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              markersMaxCount: 1,
-              outsideDaysVisible: false,
-            ),
-            headerStyle: HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: true,
-              titleTextStyle: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-              leftChevronIcon: const Icon(Icons.chevron_left),
-              rightChevronIcon: const Icon(Icons.chevron_right),
-            ),
-            onDaySelected: (selectedDay, focusedDay) {
-              setState(() {
-                _selectedDay = selectedDay;
-                _focusedDay = focusedDay;
-              });
-            },
-            onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay;
-            },
-            eventLoader: _getTasksForDay,
-          ),
-        ),
-        const SizedBox(height: 20),
-        _buildTasksForSelectedDay(),
-      ],
-    );
-  }
-
-  Widget _buildTasksForSelectedDay() {
-    if (_selectedDay == null) return const SizedBox.shrink();
-
-    final tasksForDay = _getTasksForDay(_selectedDay!);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.event,
-                color: Theme.of(context).primaryColor,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Tasks for ${_selectedDay!.day}/${_selectedDay!.month}/${_selectedDay!.year}',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (tasksForDay.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.event_available,
-                      size: 60,
-                      color: Colors.grey.withOpacity(0.3),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'No tasks for this day',
-                      style: TextStyle(
-                        color: Colors.grey.withOpacity(0.6),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            ...tasksForDay.map((todo) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildTodoItem(todo, 0),
-            )),
-        ],
       ),
     );
   }
@@ -597,248 +409,236 @@ class _TodoHomePageState extends State<TodoHomePage> with TickerProviderStateMix
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterChip(String label, int value) {
-    final isSelected = selectedFilter == value;
-    return FilterChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        setState(() {
-          selectedFilter = value;
-          _applyFilters();
-        });
-      },
-      selectedColor: Theme.of(context).primaryColor.withOpacity(0.2),
-      checkmarkColor: Theme.of(context).primaryColor,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: isSelected
-              ? Theme.of(context).primaryColor
-              : Colors.grey.withOpacity(0.3),
-        ),
-      ),
-    );
-  }
+  Widget _buildHabitCard(Habit habit) {
+    final isCompletedToday = habit.isCompletedToday();
+    final streak = habit.getCurrentStreak();
+    final weeklyProgress = habit.getWeeklyCompletion();
 
-  Widget _buildTodoItem(Todo todo, int index) {
-    final priorityColor = todo.priority == 2
-        ? Colors.red
-        : todo.priority == 1
-        ? Colors.orange
-        : Colors.blue;
-
-    return Dismissible(
-      key: Key(todo.id),
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(15),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: habit.color.withOpacity(0.3),
+          width: 2,
         ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      direction: DismissDirection.endToStart,
-      onDismissed: (direction) => _deleteTodo(todo.id),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: priorityColor.withOpacity(0.3),
-            width: 1,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        leading: GestureDetector(
+          onTap: () => _toggleHabitToday(habit),
+          child: Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: isCompletedToday
+                  ? habit.color
+                  : habit.color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: habit.color,
+                width: 2,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                habit.icon,
+                style: TextStyle(
+                  fontSize: 28,
+                  color: isCompletedToday ? Colors.white : habit.color,
+                ),
+              ),
+            ),
+          ),
+        ),
+        title: Text(
+          habit.name,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (habit.description.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  habit.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.local_fire_department,
+                  size: 16,
+                  color: streak > 0 ? Colors.orange : Colors.grey,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$streak day streak',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Icon(
+                  Icons.calendar_today,
+                  size: 14,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$weeklyProgress/${habit.targetDays} this week',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: Checkbox(
-            value: todo.isCompleted,
-            onChanged: (value) => _toggleComplete(todo),
-            shape: const CircleBorder(),
-            activeColor: Theme.of(context).primaryColor,
+        trailing: PopupMenuButton(
+          icon: const Icon(Icons.more_vert),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
           ),
-          title: Text(
-            todo.title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-              color: todo.isCompleted ? Colors.grey : null,
-            ),
-          ),
-          subtitle: (todo.description.isNotEmpty || todo.dueDate != null)
-              ? Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (todo.description.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    todo.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                      decoration: todo.isCompleted ? TextDecoration.lineThrough : null,
-                    ),
-                  ),
-                ),
-              if (todo.dueDate != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        size: 12,
-                        color: _isOverdue(todo) ? Colors.red : Colors.grey[600],
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${todo.dueDate!.day}/${todo.dueDate!.month}/${todo.dueDate!.year}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isOverdue(todo) ? Colors.red : Colors.grey[600],
-                          fontWeight: _isOverdue(todo) ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          )
-              : null,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: priorityColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              PopupMenuButton(
-                icon: const Icon(Icons.more_vert),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, size: 20),
-                        SizedBox(width: 12),
-                        Text('Edit'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, size: 20, color: Colors.red),
-                        SizedBox(width: 12),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'edit',
+              child: Row(
+                children: [
+                  Icon(Icons.edit, size: 20),
+                  SizedBox(width: 12),
+                  Text('Edit'),
                 ],
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _addOrEditTodo(existingTodo: todo);
-                  } else if (value == 'delete') {
-                    _deleteTodo(todo.id);
-                  }
-                },
               ),
-            ],
-          ),
+            ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete, size: 20, color: Colors.red),
+                  SizedBox(width: 12),
+                  Text('Delete', style: TextStyle(color: Colors.red)),
+                ],
+              ),
+            ),
+          ],
+          onSelected: (value) {
+            if (value == 'edit') {
+              _addOrEditHabit(existingHabit: habit);
+            } else if (value == 'delete') {
+              _deleteHabit(habit.id);
+            }
+          },
         ),
       ),
     );
   }
 }
 
-class TodoFormSheet extends StatefulWidget {
-  final Todo? existingTodo;
-  final Function(Todo) onSave;
+class HabitFormSheet extends StatefulWidget {
+  final Habit? existingHabit;
+  final Function(Habit) onSave;
 
-  const TodoFormSheet({
+
+  const HabitFormSheet({
     Key? key,
-    this.existingTodo,
+    this.existingHabit,
     required this.onSave,
-  }) : super(key: key);
+
+    }) : super(key: key);
 
   @override
-  State<TodoFormSheet> createState() => _TodoFormSheetState();
+  State<HabitFormSheet> createState() => _HabitFormSheetState();
 }
 
-class _TodoFormSheetState extends State<TodoFormSheet> {
-  late TextEditingController _titleController;
+class _HabitFormSheetState extends State<HabitFormSheet> {
+  late TextEditingController _nameController;
   late TextEditingController _descriptionController;
-  int _priority = 1;
-  DateTime? _selectedDueDate;
+  String _selectedIcon = '✓';
+  Color _selectedColor = Colors.purple;
+  int _targetDays = 7;
+
+  final List<String> _icons = ['✓', '💪', '📚', '🏃', '💧', '🧘', '🎯', '💤', '🍎', '✍️', '🎨', '🎵'];
+  final List<Color> _colors = [
+    Colors.purple,
+    Colors.blue,
+    Colors.green,
+    Colors.orange,
+    Colors.red,
+    Colors.pink,
+    Colors.teal,
+    Colors.indigo,
+  ];
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.existingTodo?.title ?? '');
-    _descriptionController = TextEditingController(text: widget.existingTodo?.description ?? '');
-    _priority = widget.existingTodo?.priority ?? 1;
-    _selectedDueDate = widget.existingTodo?.dueDate;
+    _nameController = TextEditingController(text: widget.existingHabit?.name ?? '');
+    _descriptionController = TextEditingController(text: widget.existingHabit?.description ?? '');
+    _selectedIcon = widget.existingHabit?.icon ?? '✓';
+    _selectedColor = widget.existingHabit?.color ?? Colors.purple;
+    _targetDays = widget.existingHabit?.targetDays ?? 7;
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
+    _nameController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 
   void _save() {
-    if (_titleController.text.trim().isEmpty) {
+    if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Please enter a title'),
+          content: const Text('Please enter a habit name'),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
@@ -846,17 +646,18 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
       return;
     }
 
-    final todo = Todo(
-      id: widget.existingTodo?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      title: _titleController.text.trim(),
+    final habit = Habit(
+      id: widget.existingHabit?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      name: _nameController.text.trim(),
       description: _descriptionController.text.trim(),
-      createdAt: widget.existingTodo?.createdAt ?? DateTime.now(),
-      isCompleted: widget.existingTodo?.isCompleted ?? false,
-      priority: _priority,
-      dueDate: _selectedDueDate,
+      icon: _selectedIcon,
+      color: _selectedColor,
+      targetDays: _targetDays,
+      createdAt: widget.existingHabit?.createdAt ?? DateTime.now(),
+      completedDates: widget.existingHabit?.completedDates ?? [],
     );
 
-    widget.onSave(todo);
+    widget.onSave(habit);
     Navigator.pop(context);
   }
 
@@ -889,7 +690,7 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
               ),
               const SizedBox(height: 24),
               Text(
-                widget.existingTodo == null ? 'New Task' : 'Edit Task',
+                widget.existingHabit == null ? 'New Habit' : 'Edit Habit',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -897,11 +698,11 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
               ),
               const SizedBox(height: 24),
               TextField(
-                controller: _titleController,
+                controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Title',
-                  hintText: 'Enter task title',
-                  prefixIcon: const Icon(Icons.title),
+                  labelText: 'Habit Name',
+                  hintText: 'e.g., Exercise, Read, Meditate',
+                  prefixIcon: const Icon(Icons.label),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(15),
                   ),
@@ -915,7 +716,7 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
                 controller: _descriptionController,
                 decoration: InputDecoration(
                   labelText: 'Description (optional)',
-                  hintText: 'Enter task description',
+                  hintText: 'Add some details',
                   prefixIcon: const Icon(Icons.notes),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(15),
@@ -923,12 +724,94 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
                   filled: true,
                   fillColor: Theme.of(context).cardColor,
                 ),
-                maxLines: 3,
+                maxLines: 2,
                 textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 16),
               const Text(
-                'Priority',
+                'Choose Icon',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _icons.map((icon) {
+                  final isSelected = icon == _selectedIcon;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedIcon = icon),
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? _selectedColor.withOpacity(0.2)
+                            : Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? _selectedColor : Colors.grey.withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          icon,
+                          style: const TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Choose Color',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _colors.map((color) {
+                  final isSelected = color == _selectedColor;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedColor = color),
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? Colors.white : Colors.transparent,
+                          width: 3,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                          BoxShadow(
+                            color: color.withOpacity(0.5),
+                            blurRadius: 8,
+                            spreadRadius: 2,
+                          ),
+                        ]
+                            : null,
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, color: Colors.white)
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Target Days per Week',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -937,86 +820,36 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _buildPriorityChip('Low', 0, Colors.blue),
-                  const SizedBox(width: 8),
-                  _buildPriorityChip('Medium', 1, Colors.orange),
-                  const SizedBox(width: 8),
-                  _buildPriorityChip('High', 2, Colors.red),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Due Date (optional)',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              InkWell(
-                onTap: () async {
-                  final DateTime? pickedDate = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDueDate ?? DateTime.now(),
-                    firstDate: DateTime.now(),
-                    lastDate: DateTime(2030),
-                    builder: (context, child) {
-                      return Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: ColorScheme.light(
-                            primary: Theme.of(context).primaryColor,
-                          ),
-                        ),
-                        child: child!,
-                      );
-                    },
-                  );
-                  if (pickedDate != null) {
-                    setState(() {
-                      _selectedDueDate = pickedDate;
-                    });
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                      color: Colors.grey.withOpacity(0.3),
+                  Expanded(
+                    child: Slider(
+                      value: _targetDays.toDouble(),
+                      min: 1,
+                      max: 7,
+                      divisions: 6,
+                      label: '$_targetDays days',
+                      onChanged: (value) {
+                        setState(() {
+                          _targetDays = value.toInt();
+                        });
+                      },
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_today,
-                        color: Theme.of(context).primaryColor,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _selectedColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$_targetDays/7',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _selectedColor,
                       ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _selectedDueDate == null
-                            ? 'Select due date'
-                            : '${_selectedDueDate!.day}/${_selectedDueDate!.month}/${_selectedDueDate!.year}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: _selectedDueDate == null
-                              ? Colors.grey
-                              : Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_selectedDueDate != null)
-                        IconButton(
-                          icon: const Icon(Icons.clear, size: 20),
-                          onPressed: () {
-                            setState(() {
-                              _selectedDueDate = null;
-                            });
-                          },
-                        ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 24),
               SizedBox(
@@ -1025,7 +858,7 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
                 child: ElevatedButton(
                   onPressed: _save,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
+                    backgroundColor: _selectedColor,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(15),
@@ -1033,53 +866,12 @@ class _TodoFormSheetState extends State<TodoFormSheet> {
                     elevation: 0,
                   ),
                   child: Text(
-                    widget.existingTodo == null ? 'Add Task' : 'Save Changes',
+                    widget.existingHabit == null ? 'Add Habit' : 'Save Changes',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPriorityChip(String label, int value, Color color) {
-    final isSelected = _priority == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _priority = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.2) : Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? color : Colors.grey.withOpacity(0.3),
-              width: 2,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? color : null,
                 ),
               ),
             ],
