@@ -457,125 +457,157 @@ class _HabitHomePageState extends State<HabitHomePage> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        leading: GestureDetector(
-          onTap: () => _toggleHabitToday(habit),
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: isCompletedToday
-                  ? habit.color
-                  : habit.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(15),
-              border: Border.all(
-                color: habit.color,
-                width: 2,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                habit.icon,
-                style: TextStyle(
-                  fontSize: 28,
-                  color: isCompletedToday ? Colors.white : habit.color,
-                ),
-              ),
-            ),
-          ),
-        ),
-        title: Text(
-          habit.name,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: Column(
+      child: Padding(
+        padding: const EdgeInsets.all(10.0),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (habit.description.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  habit.description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
+            // Habit Icon/Check button
+            GestureDetector(
+              onTap: () => _toggleHabitToday(habit),
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: isCompletedToday
+                      ? habit.color
+                      : habit.color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: habit.color,
+                    width: 2,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    habit.icon,
+                    style: TextStyle(
+                      fontSize: 22,
+                      color: isCompletedToday ? Colors.white : habit.color,
+                    ),
                   ),
                 ),
               ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  Icons.local_fire_department,
-                  size: 16,
-                  color: streak > 0 ? Colors.orange : Colors.grey,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '$streak day streak',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Icon(
-                  Icons.calendar_today,
-                  size: 14,
-                  color: Colors.grey[600],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '$weeklyProgress/${habit.targetDays} this week',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
             ),
-          ],
-        ),
-        trailing: PopupMenuButton(
-          icon: const Icon(Icons.more_vert),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: Row(
+            const SizedBox(width: 10),
+            // Habit details
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.edit, size: 20),
-                  SizedBox(width: 12),
-                  Text('Edit'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          habit.name,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      PopupMenuButton(
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit, size: 20),
+                                SizedBox(width: 12),
+                                Text('Edit'),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, size: 20, color: Colors.red),
+                                SizedBox(width: 12),
+                                Text('Delete', style: TextStyle(color: Colors.red)),
+                              ],
+                            ),
+                          ),
+                        ],
+                        onSelected: (value) {
+                          if (value == 'edit') {
+                            _addOrEditHabit(existingHabit: habit);
+                          } else if (value == 'delete') {
+                            _deleteHabit(habit.id);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (habit.description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        habit.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.local_fire_department,
+                            size: 13,
+                            color: streak > 0 ? Colors.orange : Colors.grey,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$streak day',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 11,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$weeklyProgress/${habit.targetDays} week',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete, size: 20, color: Colors.red),
-                  SizedBox(width: 12),
-                  Text('Delete', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
           ],
-          onSelected: (value) {
-            if (value == 'edit') {
-              _addOrEditHabit(existingHabit: habit);
-            } else if (value == 'delete') {
-              _deleteHabit(habit.id);
-            }
-          },
         ),
       ),
     );
@@ -586,13 +618,11 @@ class HabitFormSheet extends StatefulWidget {
   final Habit? existingHabit;
   final Function(Habit) onSave;
 
-
   const HabitFormSheet({
     Key? key,
     this.existingHabit,
     required this.onSave,
-
-    }) : super(key: key);
+  }) : super(key: key);
 
   @override
   State<HabitFormSheet> createState() => _HabitFormSheetState();
