@@ -1,60 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/movie_provider.dart';
-import '../../providers/favorites_provider.dart';
+import 'package:get/get.dart';
+import '../../controllers/movie_controller.dart';
+import '../../controllers/favorites_controller.dart';
 import '../favourites/favorites_screen.dart';
 import '../search/search_screen.dart';
 import 'widgets/movie_carousel.dart';
 import 'widgets/movie_section.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
-  // Bottom navigation pages
-  final List<Widget> _pages = [
-    const HomePage(),
-    const SearchScreen(),
-    const FavoritesScreen(),
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    // Load data when screen first loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadInitialData();
-    });
-  }
-
-  // Fetch all movie data on app start
-  void _loadInitialData() {
-    final movieProvider = Provider.of<MovieProvider>(context, listen: false);
-    final favoritesProvider = Provider.of<FavoritesProvider>(context, listen: false);
-
-    movieProvider.fetchPopularMovies();
-    movieProvider.fetchTrendingMovies();
-    movieProvider.fetchTopRatedMovies();
-    favoritesProvider.loadFavorites();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _pages[_selectedIndex],
+    final RxInt selectedIndex = 0.obs; // reactive index
+
+    final List<Widget> pages = const [
+      HomePage(),
+      SearchScreen(),
+      FavoritesScreen(),
+    ];
+
+    return Obx(() => Scaffold(
+      body: pages[selectedIndex.value],
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        currentIndex: selectedIndex.value,
+        onTap: (index) => selectedIndex.value = index,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -73,83 +43,64 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
-// Home page content with movie sections
 class HomePage extends StatelessWidget {
   const HomePage({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final movieController = Get.find<MovieController>();
+
     return SafeArea(
       child: CustomScrollView(
         slivers: [
-          // App bar
           SliverAppBar(
             floating: true,
             title: const Text('Cinema'),
             actions: [
               IconButton(
                 icon: const Icon(Icons.notifications_outlined),
-                onPressed: () {
-                  // Future: Notifications
-                },
+                onPressed: () {},
               ),
             ],
           ),
 
-          // Featured movies carousel
+          // Trending carousel
           SliverToBoxAdapter(
-            child: Consumer<MovieProvider>(
-              builder: (context, provider, child) {
-                if (provider.isLoadingTrending) {
-                  return const SizedBox(
-                    height: 400,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                if (provider.trendingMovies.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-
-                return MovieCarousel(movies: provider.trendingMovies);
-              },
-            ),
-          ),
-
-          // Popular movies section
-          SliverToBoxAdapter(
-            child: Consumer<MovieProvider>(
-              builder: (context, provider, child) {
-                return MovieSection(
-                  title: 'Popular Now',
-                  movies: provider.popularMovies,
-                  isLoading: provider.isLoadingPopular,
+            child: Obx(() {
+              if (movieController.isLoadingTrending.value) {
+                return const SizedBox(
+                  height: 400,
+                  child: Center(child: CircularProgressIndicator()),
                 );
-              },
-            ),
+              }
+              if (movieController.trendingMovies.isEmpty) return const SizedBox.shrink();
+              return MovieCarousel(movies: movieController.trendingMovies);
+            }),
           ),
 
-          // Top rated movies section
+          // Popular movies
           SliverToBoxAdapter(
-            child: Consumer<MovieProvider>(
-              builder: (context, provider, child) {
-                return MovieSection(
-                  title: 'Top Rated',
-                  movies: provider.topRatedMovies,
-                  isLoading: provider.isLoadingTopRated,
-                );
-              },
-            ),
+            child: Obx(() => MovieSection(
+              title: 'Popular Now',
+              movies: movieController.popularMovies,
+              isLoading: movieController.isLoadingPopular.value,
+            )),
           ),
 
-          // Bottom spacing
-          const SliverToBoxAdapter(
-            child: SizedBox(height: 20),
+          // Top rated movies
+          SliverToBoxAdapter(
+            child: Obx(() => MovieSection(
+              title: 'Top Rated',
+              movies: movieController.topRatedMovies,
+              isLoading: movieController.isLoadingTopRated.value,
+            )),
           ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 20)),
         ],
       ),
     );
